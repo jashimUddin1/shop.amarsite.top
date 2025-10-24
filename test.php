@@ -1,25 +1,15 @@
 Ecommerce website issue fix
 
 
+korte hobe =>
+
+1.অন্য কোনো সেকশন/ফিল্ড যোগ করা
+2.ফর্ম ভ্যালিডেশন/required
+3.Role অনুযায়ী ট্যাব হাইড/শো
+4.Dark/Light থিম টগল
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+ok akhon ai file upload system tw just headerbar a korlam ami amar // admin/settings_basic.php file ta zip kore dile amar sob tab a mani jeigula image upload lagbe sekhane same upload system kore dite parba?
 
 
 

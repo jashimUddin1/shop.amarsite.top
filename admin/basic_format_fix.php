@@ -1,6 +1,8 @@
 <?php // admin/settings_basic.php
 include 'includes/header.php';
-if (session_status() === PHP_SESSION_NONE) { session_start(); }
+if (session_status() === PHP_SESSION_NONE) {
+  session_start();
+}
 require_once "../db/dbcon.php";
 
 /** Allowed sections */
@@ -8,6 +10,9 @@ $allowed_sections = ['topbar', 'header', 'nav', 'hero', 'slider', 'banner', 'pro
 
 /** Which tab should be active (default: topbar) */
 $activeTab = $_GET['tab'] ?? 'topbar';
+if (!in_array($activeTab, $allowed_sections, true)) {
+  $activeTab = 'topbar';
+}
 
 /** Load all sections */
 $sections = [];
@@ -19,76 +24,75 @@ if ($res = $con->query("SELECT * FROM site_sections ORDER BY id ASC")) {
 
 /** Save (Partial & All) */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  function handle_image_upload($fieldName, $prefix = 'img') {
-    $MAX_BYTES = 6 * 1024 * 1024;
-    if (!isset($_FILES[$fieldName]) || !is_array($_FILES[$fieldName])) return null;
-    $err = $_FILES[$fieldName]['error'] ?? UPLOAD_ERR_NO_FILE;
-    if ($err === UPLOAD_ERR_NO_FILE) return null;
-    if ($err !== UPLOAD_ERR_OK) return null;
-    $tmp  = $_FILES[$fieldName]['tmp_name'];
-    $size = (int)($_FILES[$fieldName]['size'] ?? 0);
-    if (!is_uploaded_file($tmp)) return null;
-    if ($size <= 0 || $size > $MAX_BYTES) return null;
-    $uploadDirFs = dirname(__DIR__) . "/uploads";
-    if (!is_dir($uploadDirFs)) { @mkdir($uploadDirFs, 0775, true); }
-    $orig  = $_FILES[$fieldName]['name'] ?? ('file_' . bin2hex(random_bytes(2)));
-    $ext   = strtolower(pathinfo($orig, PATHINFO_EXTENSION));
-    $allow = ['png','jpg','jpeg','webp','gif','svg'];
-    $finfo = new finfo(FILEINFO_MIME_TYPE);
-    $mime  = $finfo->file($tmp);
-    $mime_allow = ['image/png','image/jpeg','image/webp','image/gif','image/svg+xml'];
-    if (!in_array($mime, $mime_allow, true)) return null;
-    if ($mime === 'image/jpeg') $ext = 'jpg';
-    elseif ($mime === 'image/svg+xml') $ext = 'svg';
-    if (!in_array($ext, $allow, true)) $ext = 'png';
-    $fname  = $prefix . "_" . date("Ymd_His") . "_" . bin2hex(random_bytes(3)) . "." . $ext;
-    $destFs = $uploadDirFs . "/" . $fname;
-    if (!move_uploaded_file($tmp, $destFs)) return null;
-    return "uploads/" . $fname;
+  if (empty($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'])) {
+    http_response_code(400);
+    die('Invalid CSRF token');
   }
 
-  if (empty($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'])) { http_response_code(400); die('Invalid CSRF token'); }
+  // --- Header logo upload handling (single input: name="header_logo") ---
+  if (isset($_FILES['header_logo']) && is_array($_FILES['header_logo']) && $_FILES['header_logo']['error'] === UPLOAD_ERR_OK) {
+    $tmp = $_FILES['header_logo']['tmp_name'];
+    $orig = $_FILES['header_logo']['name'];
 
-// --- Header logo upload handling (single input: name="header_logo") ---
-if (isset($_FILES['header_logo']) && is_array($_FILES['header_logo']) && $_FILES['header_logo']['error'] === UPLOAD_ERR_OK) {
-  $tmp  = $_FILES['header_logo']['tmp_name'];
-  $orig = $_FILES['header_logo']['name'];
+    if (is_uploaded_file($tmp)) {
+      $uploadDirFs = __DIR__ . "/uploads"; // admin/uploads/
+      if (!is_dir($uploadDirFs)) {
+        @mkdir($uploadDirFs, 0775, true);
+      }
 
-  if (is_uploaded_file($tmp)) {
-    $uploadDirFs = __DIR__ . "/uploads"; // admin/uploads/
-    if (!is_dir($uploadDirFs)) { @mkdir($uploadDirFs, 0775, true); }
+      $ext = strtolower(pathinfo($orig, PATHINFO_EXTENSION));
+      $allow = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'];
 
-    $ext   = strtolower(pathinfo($orig, PATHINFO_EXTENSION));
-    $allow = ['png','jpg','jpeg','webp','gif','svg'];
-    if (!in_array($ext, $allow, true)) { $ext = 'png'; }
+      // size limit 3MB
+      if (($_FILES['header_logo']['size'] ?? 0) > 3 * 1024 * 1024) {
+        die('File too large');
+      }
 
-    $fname  = "logo_" . date("Ymd_His") . "_" . bin2hex(random_bytes(3)) . "." . $ext;
-    $destFs = $uploadDirFs . DIRECTORY_SEPARATOR . $fname;
+      // mime check
+      $finfo = new finfo(FILEINFO_MIME_TYPE);
+      $mime = $finfo->file($tmp);
+      $mime_allow = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml'];
+      if (!in_array($mime, $mime_allow, true)) {
+        die('Invalid file type');
+      }
 
-    if (move_uploaded_file($tmp, $destFs)) {
-      $publicUrl = "uploads/" . $fname; // DB value
+      // normalize extension based on mime
+      $ext = $mime === 'image/jpeg' ? 'jpg' : ($mime === 'image/svg+xml' ? 'svg' : $ext);
+      if (!in_array($ext, $allow, true)) {
+        $ext = 'png';
+      }
 
-      if (!isset($_POST['header'])) $_POST['header'] = [];
-      $_POST['header']['logo'] = $publicUrl;
-      $_POST['header']['logo_enabled'] = 1;
+      $fname = "logo_" . date("Ymd_His") . "_" . bin2hex(random_bytes(3)) . "." . $ext;
+      $destFs = $uploadDirFs . DIRECTORY_SEPARATOR . $fname;
+
+      if (move_uploaded_file($tmp, $destFs)) {
+        $publicUrl = "uploads/" . $fname; // DB value
+
+        if (!isset($_POST['header']))
+          $_POST['header'] = [];
+        $_POST['header']['logo'] = $publicUrl;
+        $_POST['header']['logo_enabled'] = 1;
+      } else {
+        $_SESSION['error'] = "Logo upload failed (move). Please check folder permission.";
+      }
     } else {
-      $_SESSION['error'] = "Logo upload failed (move). Please check folder permission.";
+      $_SESSION['error'] = "Invalid upload (tmp not found).";
     }
-  } else {
-    $_SESSION['error'] = "Invalid upload (tmp not found).";
+  } elseif (!empty($_FILES['header_logo']['error']) && $_FILES['header_logo']['error'] !== UPLOAD_ERR_NO_FILE) {
+    $_SESSION['error'] = "Upload error code: " . (int) $_FILES['header_logo']['error'];
   }
-} elseif (!empty($_FILES['header_logo']['error']) && $_FILES['header_logo']['error'] !== UPLOAD_ERR_NO_FILE) {
-  $_SESSION['error'] = "Upload error code: " . (int)$_FILES['header_logo']['error'];
-}
 
 
   // ---------------- Helper function: Fix image path for admin preview ----------------
-  function admin_asset_url(string $path): string {
+  function admin_asset_url(string $path): string
+  {
     $p = trim($path);
-    if ($p === '') return '';
+    if ($p === '')
+      return '';
 
     // Already absolute
-    if (preg_match('~^(https?:)?//~i', $p)) return $p;
+    if (preg_match('~^(https?:)?//~i', $p))
+      return $p;
 
     // If starts with admin/uploads/, admin page should load uploads/
     if (strpos($p, 'admin/uploads/') === 0) {
@@ -96,7 +100,8 @@ if (isset($_FILES['header_logo']) && is_array($_FILES['header_logo']) && $_FILES
     }
 
     // If starts with uploads/, keep it
-    if (strpos($p, 'uploads/') === 0) return $p;
+    if (strpos($p, 'uploads/') === 0)
+      return $p;
 
     // Fallback
     return '../' . ltrim($p, '/');
@@ -105,11 +110,6 @@ if (isset($_FILES['header_logo']) && is_array($_FILES['header_logo']) && $_FILES
   $saveAll = isset($_POST['save_all']);
   $targetSection = $_POST['save_section'] ?? null;
 
-  // Map uploads into $_POST so they save with the section JSON
-  if ($p = handle_image_upload('header_logo', 'logo')) { $_POST['header']['logo'] = $p; $_POST['header']['logo_enabled'] = 1; }
-  if ($p = handle_image_upload('slider_image', 'slider')) { $_POST['slider']['image'] = $p; $_POST['slider']['image_enabled'] = 1; }
-  if ($p = handle_image_upload('hero_image', 'hero')) { $_POST['hero']['image'] = $p; $_POST['hero']['image_enabled'] = 1; }
-  if ($p = handle_image_upload('banner_image', 'banner')) { $_POST['banner']['image'] = $p; $_POST['banner']['image_enabled'] = 1; }
   foreach ($_POST as $key => $val) {
     if (!in_array($key, $allowed_sections, true))
       continue;
@@ -156,18 +156,19 @@ function g($arr, $path, $default = '')
 $topbar = $sections['topbar'] ?? [];
 $header = $sections['header'] ?? [];
 $nav = $sections['nav'] ?? [];
-$hero = $sections['hero'] ?? [];
 $slider = $sections['slider'] ?? [];
 $banner = $sections['banner'] ?? [];
 $productCard = $sections['product_card'] ?? [];
 $footerNav = $sections['footer_nav'] ?? [];
 $footer = $sections['footer'] ?? [];
 ?>
+
 <?php
-  if (empty($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-  }
+if (empty($_SESSION['csrf_token'])) {
+  $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
 ?>
+
 
 
 <div class="d-flex align-items-center justify-content-between mb-3">
@@ -212,14 +213,7 @@ $footer = $sections['footer'] ?? [];
     <button id="btn-tabNav" type="button" class="nav-link <?= $activeTab === 'nav' ? 'active' : '' ?>" role="tab"
       aria-selected="<?= $activeTab === 'nav' ? 'true' : 'false' ?>" aria-controls="tabNav" data-bs-toggle="tab"
       data-bs-target="#tabNav">Navigation</button>
-  
   </li>
-  <li class="nav-item">
-    <button id="btn-tabHero" type="button" class="nav-link <?= $activeTab === 'hero' ? 'active' : '' ?>" role="tab"
-      aria-selected="<?= $activeTab === 'hero' ? 'true' : 'false' ?>" aria-controls="tabHero" data-bs-toggle="tab"
-      data-bs-target="#tabHero">Hero</button>
-  </li>
-  <li class="nav-item">
   <li class="nav-item">
     <button id="btn-tabSlider" type="button" class="nav-link <?= $activeTab === 'slider' ? 'active' : '' ?>" role="tab"
       aria-selected="<?= $activeTab === 'slider' ? 'true' : 'false' ?>" aria-controls="tabSlider" data-bs-toggle="tab"
@@ -304,7 +298,7 @@ $footer = $sections['footer'] ?? [];
             <span>Left side text</span>
             <span class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" name="topbar[left][enabled]" value="1"
-                <?= $left_enabled ? 'checked' : ''; ?>>
+                <?= !empty($left['enabled']) ? 'checked' : ''; ?>>
             </span>
           </label>
         </div>
@@ -428,140 +422,145 @@ $footer = $sections['footer'] ?? [];
       </div>
     </div>
 
-<!-- ===== HEADER ===== -->
-<div class="tab-pane fade <?= $activeTab==='header' ? 'show active' : '' ?>" id="tabHeader" role="tabpanel" aria-labelledby="btn-tabHeader">
-  <div class="d-flex align-items-center justify-content-between mb-2">
-    <h5 class="mb-0">Header</h5>
-    <div class="form-check form-switch">
-      <input class="form-check-input" type="checkbox" id="header_enabled" name="header[enabled]" value="1" <?= !empty($header['enabled'])?'checked':''; ?>>
-      <label class="form-check-label small" for="header_enabled">Enable section</label>
-    </div>
-  </div>
+    <!-- ===== HEADER ===== -->
+    <div class="tab-pane fade <?= $activeTab === 'header' ? 'show active' : '' ?>" id="tabHeader" role="tabpanel"
+      aria-labelledby="btn-tabHeader">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <h5 class="mb-0">Header</h5>
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="header_enabled" name="header[enabled]" value="1"
+            <?= !empty($header['enabled']) ? 'checked' : ''; ?>>
+          <label class="form-check-label small" for="header_enabled">Enable section</label>
+        </div>
+      </div>
 
-  <?php
-    $logoUrl         = trim((string)($header['logo'] ?? ''));
-    $title_enabled   = !empty($header['title_enabled']);
-    $title2_enabled  = !empty($header['title2_enabled']);
-    $title2_style    = $header['title2_style'] ?? 'pill-gray'; // default
-  ?>
+      <?php
+      $logoUrl = trim((string) ($header['logo'] ?? ''));
+      $title_enabled = !empty($header['title_enabled']);
+      $title2_enabled = !empty($header['title2_enabled']);
+      $title2_style = $header['title2_style'] ?? 'pill-gray'; // default
+      ?>
 
-<!-- Row 1: Logo upload + Site Title -->
-<!-- Row 1: Logo upload + Site Title (single file input + instant preview) -->
-<div class="row g-3 align-items-end">
-  <!-- Logo upload / preview -->
-  <div class="col-md-6">
-    <label class="form-label d-flex align-items-center justify-content-between">
-      <span>Logo</span>
-      <span class="form-check form-switch mb-0">
-        <input class="form-check-input" type="checkbox" name="header[logo_enabled]" value="1" <?= !empty($header['logo_enabled'])?'checked':''; ?>>
-      </span>
-    </label>
+      <!-- Row 1: Logo upload + Site Title -->
+      <!-- Row 1: Logo upload + Site Title (single file input + instant preview) -->
+      <div class="row g-3 align-items-end">
+        <!-- Logo upload / preview -->
+        <div class="col-md-6">
+          <label class="form-label d-flex align-items-center justify-content-between">
+            <span>Logo</span>
+            <span class="form-check form-switch mb-0">
+              <input class="form-check-input" type="checkbox" name="header[logo_enabled]" value="1"
+                <?= !empty($header['logo_enabled']) ? 'checked' : ''; ?>>
+            </span>
+          </label>
 
-    <?php
-      $logoUrl = trim((string)($header['logo'] ?? ''));
-      $logoSrc = function_exists('admin_asset_url') ? admin_asset_url($logoUrl) : $logoUrl;
-    ?>
+          <?php
+          $logoUrl = trim((string) ($header['logo'] ?? ''));
+          $logoSrc = function_exists('admin_asset_url') ? admin_asset_url($logoUrl) : $logoUrl;
+          ?>
 
-    <!-- একটাই file input (hidden) -->
-    <input id="header_logo" type="file" name="header_logo" accept="image/*" hidden>
+          <!-- একটাই file input (hidden) -->
+          <input id="header_logo" type="file" name="header_logo" accept="image/*" hidden>
 
-    <div class="border rounded p-3">
-      <!-- Preview wrapper -->
-      <div id="logoPreviewWrap" class="<?= $logoUrl ? '' : 'd-none' ?>">
-        <div class="d-flex align-items-center gap-3">
-          <img id="logoPreviewImg" src="<?= htmlspecialchars($logoSrc) ?>" alt="logo" class="rounded" style="height:48px; width:auto;">
-          <div class="flex-grow-1">
-            <div class="small text-muted">
-              <span id="logoPreviewNote"><?= $logoUrl ? 'Current logo' : '' ?></span>
-              <span id="logoUnsavedBadge" class="badge bg-warning text-dark ms-2 d-none">Unsaved preview</span>
+          <div class="border rounded p-3">
+            <!-- Preview wrapper -->
+            <div id="logoPreviewWrap" class="<?= $logoUrl ? '' : 'd-none' ?>">
+              <div class="d-flex align-items-center gap-3">
+                <img id="logoPreviewImg" src="<?= htmlspecialchars($logoSrc) ?>" alt="logo" class="rounded"
+                  style="height:48px; width:auto;">
+                <div class="flex-grow-1">
+                  <div class="small text-muted">
+                    <span id="logoPreviewNote"><?= $logoUrl ? 'Current logo' : '' ?></span>
+                    <span id="logoUnsavedBadge" class="badge bg-warning text-dark ms-2 d-none">Unsaved preview</span>
+                  </div>
+                  <div class="d-flex align-items-center gap-2 mt-1">
+                    <!-- Change triggers the same input -->
+                    <label for="header_logo" class="btn btn-sm btn-outline-secondary mb-0">Change</label>
+                    <button type="button" id="logoResetBtn"
+                      class="btn btn-sm btn-outline-secondary d-none">Reset</button>
+                    <a id="logoViewBtn" class="btn btn-sm btn-outline-dark <?= $logoUrl ? '' : 'd-none' ?>"
+                      href="<?= htmlspecialchars($logoSrc) ?>" target="_blank" rel="noopener">View</a>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="d-flex align-items-center gap-2 mt-1">
-              <!-- Change triggers the same input -->
-              <label for="header_logo" class="btn btn-sm btn-outline-secondary mb-0">Change</label>
-              <button type="button" id="logoResetBtn" class="btn btn-sm btn-outline-secondary d-none">Reset</button>
-              <a id="logoViewBtn"
-                 class="btn btn-sm btn-outline-dark <?= $logoUrl ? '' : 'd-none' ?>"
-                 href="<?= htmlspecialchars($logoSrc) ?>"
-                 target="_blank" rel="noopener">View</a>
+
+            <!-- Placeholder -->
+            <div id="logoPlaceholderWrap" class="text-center p-3 bg-light rounded <?= $logoUrl ? 'd-none' : '' ?>">
+              <div class="mb-2" style="width:64px;height:64px;border-radius:999px;background:#000;color:#fff;
+                    display:inline-flex;align-items:center;justify-content:center;font-weight:700;">
+                img
+              </div>
+              <div class="small text-muted mb-2">No logo yet</div>
+              <!-- Upload triggers the same input -->
+              <label for="header_logo" class="btn btn-sm btn-dark mb-0">Upload</label>
+              <div class="form-text">Please upload image/picture</div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Placeholder -->
-      <div id="logoPlaceholderWrap" class="text-center p-3 bg-light rounded <?= $logoUrl ? 'd-none' : '' ?>">
-        <div class="mb-2"
-             style="width:64px;height:64px;border-radius:999px;background:#000;color:#fff;
-                    display:inline-flex;align-items:center;justify-content:center;font-weight:700;">
-          img
+        <!-- Site Title -->
+        <div class="col-md-6">
+          <label class="form-label d-flex align-items-center justify-content-between">
+            <span>Site Title</span>
+            <span class="form-check form-switch mb-0">
+              <input class="form-check-input" type="checkbox" name="header[title_enabled]" value="1"
+                <?= !empty($header['title_enabled']) ? 'checked' : ''; ?>>
+            </span>
+          </label>
+          <input type="text" name="header[title]" class="form-control" placeholder="e.g. FASHN"
+            value="<?= htmlspecialchars($header['title'] ?? '') ?>">
         </div>
-        <div class="small text-muted mb-2">No logo yet</div>
-        <!-- Upload triggers the same input -->
-        <label for="header_logo" class="btn btn-sm btn-dark mb-0">Upload</label>
-        <div class="form-text">Please upload image/picture</div>
+      </div>
+
+
+
+      <hr>
+
+      <!-- Row 2: Title 2 + Shave Type (inline small select) -->
+      <div class="row g-3 align-items-end">
+        <div class="col-md-8">
+          <label class="form-label d-flex align-items-center justify-content-between">
+            <span>Title 2</span>
+            <span class="form-check form-switch mb-0">
+              <input class="form-check-input" type="checkbox" name="header[title2_enabled]" value="1"
+                <?= !empty($header['title2_enabled']) ? 'checked' : ''; ?>>
+            </span>
+          </label>
+          <input type="text" name="header[title2]" class="form-control"
+            placeholder="e.g. BD / New Collection · Winter '25"
+            value="<?= htmlspecialchars($header['title'] ?? '') ? htmlspecialchars($header['title2'] ?? '') : htmlspecialchars($header['title2'] ?? '') ?>">
+          <div class="form-text">লম্বা হলে ফ্রন্টএন্ডে স্বয়ংক্রিয়ভাবে ellipsis (… shave) হবে।</div>
+        </div>
+
+        <div class="col-md-4">
+          <label class="form-label">Shave Type (Style)</label>
+          <select name="header[title2_style]" class="form-select form-select-sm w-auto d-inline-block">
+            <?php
+            $options = [
+              'pill-gray' => 'Pill — Gray',
+              'pill-dark' => 'Pill — Dark',
+              'pill-accent' => 'Pill — Accent',
+              'outline' => 'Outline',
+              'circle' => 'Circle',
+            ];
+            foreach ($options as $val => $label):
+              ?>
+              <option value="<?= $val ?>" <?= $title2_style === $val ? 'selected' : ''; ?>><?= $label ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-between mt-4">
+        <button type="submit" name="save_section" value="header" class="btn btn-secondary px-4">
+          <i class="bi bi-save me-1"></i> Save
+        </button>
+        <button type="submit" name="save_all" class="btn btn-dark px-4">
+          <i class="bi bi-save2 me-1"></i> Save All Changes
+        </button>
       </div>
     </div>
-  </div>
-
-  <!-- Site Title -->
-  <div class="col-md-6">
-    <label class="form-label d-flex align-items-center justify-content-between">
-      <span>Site Title</span>
-      <span class="form-check form-switch mb-0">
-        <input class="form-check-input" type="checkbox" name="header[title_enabled]" value="1" <?= !empty($header['title_enabled'])?'checked':''; ?>>
-      </span>
-    </label>
-    <input type="text" name="header[title]" class="form-control" placeholder="e.g. FASHN"
-           value="<?= htmlspecialchars($header['title'] ?? '') ?>">
-  </div>
-</div>
-
-
-
-  <hr>
-
-  <!-- Row 2: Title 2 + Shave Type (inline small select) -->
-  <div class="row g-3 align-items-end">
-    <div class="col-md-8">
-      <label class="form-label d-flex align-items-center justify-content-between">
-        <span>Title 2</span>
-        <span class="form-check form-switch mb-0">
-          <input class="form-check-input" type="checkbox" name="header[title2_enabled]" value="1" <?= $title2_enabled?'checked':''; ?>>
-        </span>
-      </label>
-      <input type="text" name="header[title2]" class="form-control" placeholder="e.g. BD / New Collection · Winter '25"
-             value="<?= htmlspecialchars($header['title'] ?? '') ? htmlspecialchars($header['title2'] ?? '') : htmlspecialchars($header['title2'] ?? '') ?>">
-      <div class="form-text">লম্বা হলে ফ্রন্টএন্ডে স্বয়ংক্রিয়ভাবে ellipsis (… shave) হবে।</div>
-    </div>
-
-    <div class="col-md-4">
-      <label class="form-label">Shave Type (Style)</label>
-      <select name="header[title2_style]" class="form-select form-select-sm w-auto d-inline-block">
-        <?php
-          $options = [
-            'pill-gray'   => 'Pill — Gray',
-            'pill-dark'   => 'Pill — Dark',
-            'pill-accent' => 'Pill — Accent',
-            'outline'     => 'Outline',
-            'circle'      => 'Circle',
-          ];
-          foreach ($options as $val=>$label):
-        ?>
-          <option value="<?= $val ?>" <?= $title2_style===$val?'selected':''; ?>><?= $label ?></option>
-        <?php endforeach; ?>
-      </select>
-    </div>
-  </div>
-
-  <div class="d-flex justify-content-between mt-4">
-    <button type="submit" name="save_section" value="header" class="btn btn-secondary px-4">
-      <i class="bi bi-save me-1"></i> Save
-    </button>
-    <button type="submit" name="save_all" class="btn btn-dark px-4">
-      <i class="bi bi-save2 me-1"></i> Save All Changes
-    </button>
-  </div>
-</div>
 
 
 
@@ -586,17 +585,18 @@ $footer = $sections['footer'] ?? [];
             <span>Brand Text</span>
             <span class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" name="nav[brand_enabled]" value="1"
-                <?= $brand_enabled ? 'checked' : ''; ?>>
+                <?= !empty($nav['brand_enabled']) ? 'checked' : ''; ?>>
             </span>
           </label>
-          <input type="text" name="nav[brand]" class="form-control" value="<?= htmlspecialchars($nav['brand'] ?? '') ?>">
+          <input type="text" name="nav[brand]" class="form-control"
+            value="<?= htmlspecialchars($nav['brand'] ?? '') ?>">
         </div>
         <div class="col-md-6">
           <label class="form-label d-flex align-items-center justify-content-between">
             <span>Menu (comma separated)</span>
             <span class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" name="nav[menu_enabled]" value="1"
-                <?= $menu_enabled ? 'checked' : ''; ?>>
+                <?= !empty($nav['menu_enabled']) ? 'checked' : ''; ?>>
             </span>
           </label>
           <input type="text" name="nav[menu]" class="form-control" placeholder="Home,Shop,About,Contact"
@@ -614,107 +614,7 @@ $footer = $sections['footer'] ?? [];
       </div>
     </div>
 
-    
-    <!-- ===== HERO ===== -->
-    <div class="tab-pane fade <?= $activeTab === 'hero' ? 'show active' : '' ?>" id="tabHero" role="tabpanel"
-      aria-labelledby="btn-tabHero">
-      <div class="d-flex align-items-center justify-content-between mb-2">
-        <h5 class="mb-0">Hero</h5>
-        <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" id="hero_enabled" name="hero[enabled]" value="1"
-            <?= !empty($hero['enabled']) ? 'checked' : ''; ?>>
-          <label class="form-check-label small" for="hero_enabled">Enable section</label>
-        </div>
-      </div>
-
-      <?php
-      $hr_title_en = !empty($hero['title_enabled']);
-      $hr_sub_en   = !empty($hero['subtitle_enabled']);
-      $hr_img_en   = !empty($hero['image_enabled']);
-      $hr_btn_en   = !empty($hero['button_enabled']);
-      ?>
-
-      <div class="row g-3">
-        <div class="col-md-6">
-          <label class="form-label d-flex align-items-center justify-content-between">
-            <span>Title</span>
-            <span class="form-check form-switch mb-0">
-              <input class="form-check-input" type="checkbox" name="hero[title_enabled]" value="1" <?= $hr_title_en ? 'checked' : '';?>>
-            </span>
-          </label>
-          <input type="text" class="form-control" name="hero[title]" value="<?= htmlspecialchars($hero['title'] ?? '') ?>"
-            placeholder="E.g., Welcome to Our Store">
-          <small class="text-muted">Main headline text.</small>
-        </div>
-
-        <div class="col-md-6">
-          <label class="form-label d-flex align-items-center justify-content-between">
-            <span>Subtitle</span>
-            <span class="form-check form-switch mb-0">
-              <input class="form-check-input" type="checkbox" name="hero[subtitle_enabled]" value="1" <?= $hr_sub_en ? 'checked' : '';?>>
-            </span>
-          </label>
-          <input type="text" class="form-control" name="hero[subtitle]" value="<?= htmlspecialchars($hero['subtitle'] ?? '') ?>"
-            placeholder="E.g., Fresh deals every day">
-          <small class="text-muted">Short supporting text under the title.</small>
-        </div>
-
-        <div class="col-md-8">
-          <label class="form-label d-flex align-items-center justify-content-between">
-            <span>Background Image</span>
-            <span class="form-check form-switch mb-0">
-              <input class="form-check-input" type="checkbox" name="hero[image_enabled]" value="1" <?= $hr_img_en ? 'checked' : '';?>>
-            </span>
-          </label>
-          <div class="input-group">
-            <input type="text" class="form-control" name="hero[image]" value="<?= htmlspecialchars($hero['image'] ?? '') ?>" placeholder="uploads/hero_xxx.jpg" readonly>
-            <input type="file" class="form-control" name="hero_image" accept="image/*">
-          </div>
-          <div class="mt-2">
-            <img id="heroPreviewImg" src="<?= !empty($hero['image']) ? htmlspecialchars($hero['image']) : '' ?>" alt="" class="img-fluid rounded border" style="max-height:180px;<?= empty($hero['image']) ? 'display:none' : '' ?>">
-            <div class="form-text">Max upload size: 6 MB (Recommended ≤ 5 MB). Supported: JPG, PNG, WEBP, GIF, SVG.</div>
-          </div>
-        </div>
-
-        <div class="col-md-4">
-          <label class="form-label">Content Alignment</label>
-          <select class="form-select" name="hero[align]">
-            <?php $align = $hero['align'] ?? 'center'; ?>
-            <option value="left"   <?= $align==='left'?'selected':''; ?>>Left</option>
-            <option value="center" <?= $align==='center'?'selected':''; ?>>Center</option>
-            <option value="right"  <?= $align==='right'?'selected':''; ?>>Right</option>
-          </select>
-          <div class="form-check mt-3">
-            <input class="form-check-input" type="checkbox" id="hero_overlay" name="hero[overlay]" value="1" <?= !empty($hero['overlay']) ? 'checked' : ''; ?>>
-            <label class="form-check-label" for="hero_overlay">Dark overlay on image</label>
-          </div>
-        </div>
-
-        <div class="col-md-6">
-          <label class="form-label d-flex align-items-center justify-content-between">
-            <span>Button Text &amp; URL</span>
-            <span class="form-check form-switch mb-0">
-              <input class="form-check-input" type="checkbox" name="hero[button_enabled]" value="1" <?= $hr_btn_en ? 'checked' : '';?>>
-            </span>
-          </label>
-          <div class="input-group">
-            <input type="text" class="form-control" name="hero[button_text]" value="<?= htmlspecialchars($hero['button_text'] ?? '') ?>" placeholder="Shop Now">
-            <input type="text" class="form-control" name="hero[button_url]" value="<?= htmlspecialchars($hero['button_url'] ?? '') ?>" placeholder="/shop">
-          </div>
-          <small class="text-muted">Leave blank to hide the button.</small>
-        </div>
-      </div>
-
-      <div class="d-flex justify-content-between mt-4">
-        <button type="submit" name="save_section" value="hero" class="btn btn-secondary px-4">
-          <i class="bi bi-save me-1"></i> Save
-        </button>
-        <button type="submit" name="save_all" class="btn btn-dark px-4">
-          <i class="bi bi-save2 me-1"></i> Save All Changes
-        </button>
-      </div>
-    </div>
-<!-- ===== SLIDER ===== -->
+    <!-- ===== SLIDER ===== -->
     <div class="tab-pane fade <?= $activeTab === 'slider' ? 'show active' : '' ?>" id="tabSlider" role="tabpanel"
       aria-labelledby="btn-tabSlider">
       <div class="d-flex align-items-center justify-content-between mb-2">
@@ -738,7 +638,7 @@ $footer = $sections['footer'] ?? [];
             <span>Title</span>
             <span class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" name="slider[title_enabled]" value="1"
-                <?= $sl_title_en ? 'checked' : ''; ?>>
+                <?= !empty($slider['title_enabled']) ? 'checked' : ''; ?>>
             </span>
           </label>
           <input type="text" name="slider[title]" class="form-control"
@@ -749,7 +649,7 @@ $footer = $sections['footer'] ?? [];
             <span>Subtitle</span>
             <span class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" name="slider[subtitle_enabled]" value="1"
-                <?= $sl_sub_en ? 'checked' : ''; ?>>
+                <?= !empty($slider['subtitle_enabled']) ? 'checked' : ''; ?>>
             </span>
           </label>
           <input type="text" name="slider[subtitle]" class="form-control"
@@ -760,7 +660,7 @@ $footer = $sections['footer'] ?? [];
             <span>Image URL</span>
             <span class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" name="slider[image_enabled]" value="1"
-                <?= $sl_img_en ? 'checked' : ''; ?>>
+                <?= !empty($slider['image_enabled']) ? 'checked' : ''; ?>>
             </span>
           </label>
           <input type="text" name="slider[image]" class="form-control"
@@ -774,7 +674,7 @@ $footer = $sections['footer'] ?? [];
             <span>Button</span>
             <span class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" name="slider[button_enabled]" value="1"
-                <?= $sl_btn_en ? 'checked' : ''; ?>>
+                <?= !empty($slider['button_enabled']) ? 'checked' : ''; ?>>
             </span>
           </label>
           <input type="text" name="slider[button_text]" class="form-control mb-2" placeholder="Button text"
@@ -814,7 +714,7 @@ $footer = $sections['footer'] ?? [];
             <span>Image URL</span>
             <span class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" name="banner[image_enabled]" value="1"
-                <?= $bn_img_en ? 'checked' : ''; ?>>
+                <?= !empty($banner['image_enabled']) ? 'checked' : ''; ?>>
             </span>
           </label>
           <input type="text" name="banner[image]" class="form-control"
@@ -828,7 +728,7 @@ $footer = $sections['footer'] ?? [];
             <span>Text & Link</span>
             <span class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" name="banner[text_enabled]" value="1"
-                <?= $bn_txt_en ? 'checked' : ''; ?>>
+                <?= !empty($banner['text_enabled']) ? 'checked' : ''; ?>>
             </span>
           </label>
           <input type="text" name="banner[link]" class="form-control mb-2" placeholder="Link URL"
@@ -916,7 +816,7 @@ $footer = $sections['footer'] ?? [];
             <span>Column 1 (comma separated)</span>
             <span class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" name="footer_nav[col1_enabled]" value="1"
-                <?= $col1_en ? 'checked' : ''; ?>>
+                <?= !empty($footerNav['col1_enabled']) ? 'checked' : ''; ?>>
             </span>
           </label>
           <input type="text" name="footer_nav[col1]" class="form-control"
@@ -927,7 +827,7 @@ $footer = $sections['footer'] ?? [];
             <span>Column 2 (comma separated)</span>
             <span class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" name="footer_nav[col2_enabled]" value="1"
-                <?= $col2_en ? 'checked' : ''; ?>>
+                <?= !empty($footerNav['col2_enabled']) ? 'checked' : ''; ?>>
             </span>
           </label>
           <input type="text" name="footer_nav[col2]" class="form-control"
@@ -969,7 +869,7 @@ $footer = $sections['footer'] ?? [];
             <span>Footer Text</span>
             <span class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" name="footer[text_enabled]" value="1"
-                <?= $ft_text_en ? 'checked' : ''; ?>>
+                <?= !empty($footer['text_enabled']) ? 'checked' : ''; ?>>
             </span>
           </label>
           <input type="text" name="footer[text]" class="form-control"
@@ -980,7 +880,7 @@ $footer = $sections['footer'] ?? [];
             <span>Facebook</span>
             <span class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" name="footer[social][facebook_enabled]" value="1"
-                <?= $fb_en ? 'checked' : ''; ?>>
+                <?= !empty($footer['social']['facebook_enabled']) ? 'checked' : ''; ?>>
             </span>
           </label>
           <input type="text" name="footer[social][facebook]" class="form-control"
@@ -991,7 +891,7 @@ $footer = $sections['footer'] ?? [];
             <span>Instagram</span>
             <span class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" name="footer[social][instagram_enabled]" value="1"
-                <?= $ig_en ? 'checked' : ''; ?>>
+                <?= !empty($footer['social']['instagram_enabled']) ? 'checked' : ''; ?>>
             </span>
           </label>
           <input type="text" name="footer[social][instagram]" class="form-control"
@@ -1002,7 +902,7 @@ $footer = $sections['footer'] ?? [];
             <span>YouTube</span>
             <span class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" name="footer[social][youtube_enabled]" value="1"
-                <?= $yt_en ? 'checked' : ''; ?>>
+                <?= !empty($footer['social']['youtube_enabled']) ? 'checked' : ''; ?>>
             </span>
           </label>
           <input type="text" name="footer[social][youtube]" class="form-control"
@@ -1042,108 +942,17 @@ $footer = $sections['footer'] ?? [];
 
 
 <script>
-(function(){
-  const fileInput   = document.getElementById('header_logo');
-  if (!fileInput) return;
-
-  const placeholder = document.getElementById('logoPlaceholderWrap');
-  const previewWrap = document.getElementById('logoPreviewWrap');
-  const previewImg  = document.getElementById('logoPreviewImg');
-  const unsavedBadge= document.getElementById('logoUnsavedBadge');
-  const previewNote = document.getElementById('logoPreviewNote');
-  const resetBtn    = document.getElementById('logoResetBtn');
-  const viewBtn     = document.getElementById('logoViewBtn');
-
-  const initialSrc = previewImg ? previewImg.getAttribute('src') : '';
-  let blobUrl = null;
-
-  function updateViewButton(src, isUnsaved){
-    if (!viewBtn) return;
-    if (src) {
-      viewBtn.classList.remove('d-none');
-      viewBtn.setAttribute('href', src);
-      viewBtn.textContent = isUnsaved ? 'View (preview)' : 'View';
-    } else {
-      viewBtn.classList.add('d-none');
-      viewBtn.removeAttribute('href');
-    }
-  }
-
-  function showPreview(src, isUnsaved){
-    if (!previewWrap || !previewImg) return;
-    previewImg.src = src || '';
-    previewWrap.classList.remove('d-none');
-    if (placeholder) placeholder.classList.add('d-none');
-
-    if (unsavedBadge) unsavedBadge.classList.toggle('d-none', !isUnsaved);
-    if (resetBtn) resetBtn.classList.toggle('d-none', !isUnsaved);
-    if (previewNote) previewNote.textContent = isUnsaved ? 'Selected (not saved yet)' : (initialSrc ? 'Current logo' : '');
-    updateViewButton(src, isUnsaved);
-  }
-
-  function resetPreview(){
-    if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
-    try { fileInput.value = ''; } catch(e){}
-    if (initialSrc) {
-      showPreview(initialSrc, false);
-    } else {
-      if (previewWrap) previewWrap.classList.add('d-none');
-      if (placeholder) placeholder.classList.remove('d-none');
-      updateViewButton('', false);
-    }
-  }
-
-  fileInput.addEventListener('change', function(e){
-    const f = e.target.files && e.target.files[0];
-    if (!f) return;
-    if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
-    blobUrl = URL.createObjectURL(f);
-    showPreview(blobUrl, true);
-  });
-
-  if (resetBtn) {
-    resetBtn.addEventListener('click', function(){
-      resetPreview();
-    });
-  }
-})();
-</script>
-
-
-
-
-
-<!-- Unified scripts: active tab + header logo preview + multi-uploader (header/slider/hero/banner) -->
-<script>
-document.addEventListener('DOMContentLoaded', function(){
-
-  /* 1) Keep active tab in URL + hidden input */
-  document.querySelectorAll('button[data-bs-toggle="tab"]').forEach(function (btn) {
-    btn.addEventListener('shown.bs.tab', function (e) {
-      var target = e.target.getAttribute('data-bs-target');
-      var key = (target || '').replace('#tab', '').toLowerCase();
-      var input = document.getElementById('activeTabInput');
-      if (input && key) input.value = key;
-      if (key) {
-        var url = new URL(window.location);
-        url.searchParams.set('tab', key);
-        window.history.replaceState({}, '', url);
-      }
-    });
-  });
-
-  /* 2) Header logo dedicated preview logic */
   (function () {
-    const fileInput   = document.getElementById('header_logo');
+    const fileInput = document.getElementById('header_logo');
     if (!fileInput) return;
 
     const placeholder = document.getElementById('logoPlaceholderWrap');
     const previewWrap = document.getElementById('logoPreviewWrap');
-    const previewImg  = document.getElementById('logoPreviewImg');
-    const unsavedBadge= document.getElementById('logoUnsavedBadge');
+    const previewImg = document.getElementById('logoPreviewImg');
+    const unsavedBadge = document.getElementById('logoUnsavedBadge');
     const previewNote = document.getElementById('logoPreviewNote');
-    const resetBtn    = document.getElementById('logoResetBtn');
-    const viewBtn     = document.getElementById('logoViewBtn');
+    const resetBtn = document.getElementById('logoResetBtn');
+    const viewBtn = document.getElementById('logoViewBtn');
 
     const initialSrc = previewImg ? previewImg.getAttribute('src') : '';
     let blobUrl = null;
@@ -1161,10 +970,11 @@ document.addEventListener('DOMContentLoaded', function(){
     }
 
     function showPreview(src, isUnsaved) {
-      if (!previewImg) return;
+      if (!previewWrap || !previewImg) return;
       previewImg.src = src || '';
-      if (previewWrap) previewWrap.classList.remove('d-none');
+      previewWrap.classList.remove('d-none');
       if (placeholder) placeholder.classList.add('d-none');
+
       if (unsavedBadge) unsavedBadge.classList.toggle('d-none', !isUnsaved);
       if (resetBtn) resetBtn.classList.toggle('d-none', !isUnsaved);
       if (previewNote) previewNote.textContent = isUnsaved ? 'Selected (not saved yet)' : (initialSrc ? 'Current logo' : '');
@@ -1173,7 +983,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
     function resetPreview() {
       if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
-      try { fileInput.value = ''; } catch (e) {}
+      try { fileInput.value = ''; } catch (e) { }
       if (initialSrc) {
         showPreview(initialSrc, false);
       } else {
@@ -1197,44 +1007,9 @@ document.addEventListener('DOMContentLoaded', function(){
       });
     }
   })();
-
-  /* 3) Generic uploader + live preview for header/slider/hero/banner */
-  (function () {
-    function bindUploader(triggerAttr, fileInputId, previewImgId, urlInputSelector) {
-      var trigger   = document.querySelector('[data-upload-trigger="' + triggerAttr + '"]');
-      var fileInput = document.getElementById(fileInputId);
-      var preview   = document.getElementById(previewImgId);
-      var urlInput  = document.querySelector(urlInputSelector);
-      if (!trigger || !fileInput) return;
-
-      trigger.addEventListener('click', function () { fileInput.click(); });
-
-      fileInput.addEventListener('change', function () {
-        if (!fileInput.files || !fileInput.files[0]) return;
-        var reader = new FileReader();
-        reader.onload = function (e) {
-          if (!preview) {
-            preview = document.createElement('img');
-            preview.id = previewImgId;
-            preview.className = 'mt-2 rounded';
-            preview.style.height = '120px';
-            var parent = fileInput.parentElement || trigger.parentElement || document.body;
-            parent.appendChild(preview);
-          }
-          preview.src = e.target.result;
-          preview.style.display = 'block';
-        };
-        reader.readAsDataURL(fileInput.files[0]);
-        if (urlInput) urlInput.value = '';
-      });
-    }
-
-    bindUploader('header', 'header_logo',    'logoPreviewImg',   'input[name="header[logo]"]');
-    bindUploader('slider', 'slider_image',   'sliderPreviewImg', 'input[name="slider[image]"]');
-    bindUploader('hero',   'hero_image',     'heroPreviewImg',   'input[name="hero[image]"]');
-    bindUploader('banner', 'banner_image',   'bannerPreviewImg', 'input[name="banner[image]"]');
-  })();
-
-});
 </script>
+
+
+
+
 <?php include 'includes/footer.php'; ?>

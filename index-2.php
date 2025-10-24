@@ -41,8 +41,9 @@ $result = $con->query($sql);
   <nav class="sticky-top bg-white border-bottom py-3">
     <div class="container d-flex align-items-center justify-content-between">
       <div class="d-flex align-items-center gap-2">
+        <span class="hammenu" style="font-size:1.25rem; line-height:1; margin-right: 5px;">☰</span>
         <img class="img-fluid rounded-circle" src="admin/<?= htmlspecialchars($logo) ?>" alt="Logo" style="height:38px;object-fit:contain;">
-        <span class="fw-bold fs-4"><?= htmlspecialchars($site_name) ?></span>
+        <span class="fw-bold fs-4">FASHN</span>
         <span class="badge text-bg-secondary rounded-pill">BD</span>
       </div>
       <form class="d-none d-md-flex w-50" method="get">

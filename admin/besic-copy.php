@@ -1,6 +1,5 @@
 <?php // admin/settings_basic.php
 include 'includes/header.php';
-if (session_status() === PHP_SESSION_NONE) { session_start(); }
 require_once "../db/dbcon.php";
 
 /** Allowed sections */
@@ -19,35 +18,6 @@ if ($res = $con->query("SELECT * FROM site_sections ORDER BY id ASC")) {
 
 /** Save (Partial & All) */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  function handle_image_upload($fieldName, $prefix = 'img') {
-    $MAX_BYTES = 6 * 1024 * 1024;
-    if (!isset($_FILES[$fieldName]) || !is_array($_FILES[$fieldName])) return null;
-    $err = $_FILES[$fieldName]['error'] ?? UPLOAD_ERR_NO_FILE;
-    if ($err === UPLOAD_ERR_NO_FILE) return null;
-    if ($err !== UPLOAD_ERR_OK) return null;
-    $tmp  = $_FILES[$fieldName]['tmp_name'];
-    $size = (int)($_FILES[$fieldName]['size'] ?? 0);
-    if (!is_uploaded_file($tmp)) return null;
-    if ($size <= 0 || $size > $MAX_BYTES) return null;
-    $uploadDirFs = dirname(__DIR__) . "/uploads";
-    if (!is_dir($uploadDirFs)) { @mkdir($uploadDirFs, 0775, true); }
-    $orig  = $_FILES[$fieldName]['name'] ?? ('file_' . bin2hex(random_bytes(2)));
-    $ext   = strtolower(pathinfo($orig, PATHINFO_EXTENSION));
-    $allow = ['png','jpg','jpeg','webp','gif','svg'];
-    $finfo = new finfo(FILEINFO_MIME_TYPE);
-    $mime  = $finfo->file($tmp);
-    $mime_allow = ['image/png','image/jpeg','image/webp','image/gif','image/svg+xml'];
-    if (!in_array($mime, $mime_allow, true)) return null;
-    if ($mime === 'image/jpeg') $ext = 'jpg';
-    elseif ($mime === 'image/svg+xml') $ext = 'svg';
-    if (!in_array($ext, $allow, true)) $ext = 'png';
-    $fname  = $prefix . "_" . date("Ymd_His") . "_" . bin2hex(random_bytes(3)) . "." . $ext;
-    $destFs = $uploadDirFs . "/" . $fname;
-    if (!move_uploaded_file($tmp, $destFs)) return null;
-    return "uploads/" . $fname;
-  }
-
-  if (empty($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'])) { http_response_code(400); die('Invalid CSRF token'); }
 
 // --- Header logo upload handling (single input: name="header_logo") ---
 if (isset($_FILES['header_logo']) && is_array($_FILES['header_logo']) && $_FILES['header_logo']['error'] === UPLOAD_ERR_OK) {
@@ -105,11 +75,6 @@ if (isset($_FILES['header_logo']) && is_array($_FILES['header_logo']) && $_FILES
   $saveAll = isset($_POST['save_all']);
   $targetSection = $_POST['save_section'] ?? null;
 
-  // Map uploads into $_POST so they save with the section JSON
-  if ($p = handle_image_upload('header_logo', 'logo')) { $_POST['header']['logo'] = $p; $_POST['header']['logo_enabled'] = 1; }
-  if ($p = handle_image_upload('slider_image', 'slider')) { $_POST['slider']['image'] = $p; $_POST['slider']['image_enabled'] = 1; }
-  if ($p = handle_image_upload('hero_image', 'hero')) { $_POST['hero']['image'] = $p; $_POST['hero']['image_enabled'] = 1; }
-  if ($p = handle_image_upload('banner_image', 'banner')) { $_POST['banner']['image'] = $p; $_POST['banner']['image_enabled'] = 1; }
   foreach ($_POST as $key => $val) {
     if (!in_array($key, $allowed_sections, true))
       continue;
@@ -156,19 +121,12 @@ function g($arr, $path, $default = '')
 $topbar = $sections['topbar'] ?? [];
 $header = $sections['header'] ?? [];
 $nav = $sections['nav'] ?? [];
-$hero = $sections['hero'] ?? [];
 $slider = $sections['slider'] ?? [];
 $banner = $sections['banner'] ?? [];
 $productCard = $sections['product_card'] ?? [];
 $footerNav = $sections['footer_nav'] ?? [];
 $footer = $sections['footer'] ?? [];
 ?>
-<?php
-  if (empty($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-  }
-?>
-
 
 <div class="d-flex align-items-center justify-content-between mb-3">
   <h3 class="mb-0">Basic Settings</h3>
@@ -212,14 +170,7 @@ $footer = $sections['footer'] ?? [];
     <button id="btn-tabNav" type="button" class="nav-link <?= $activeTab === 'nav' ? 'active' : '' ?>" role="tab"
       aria-selected="<?= $activeTab === 'nav' ? 'true' : 'false' ?>" aria-controls="tabNav" data-bs-toggle="tab"
       data-bs-target="#tabNav">Navigation</button>
-  
   </li>
-  <li class="nav-item">
-    <button id="btn-tabHero" type="button" class="nav-link <?= $activeTab === 'hero' ? 'active' : '' ?>" role="tab"
-      aria-selected="<?= $activeTab === 'hero' ? 'true' : 'false' ?>" aria-controls="tabHero" data-bs-toggle="tab"
-      data-bs-target="#tabHero">Hero</button>
-  </li>
-  <li class="nav-item">
   <li class="nav-item">
     <button id="btn-tabSlider" type="button" class="nav-link <?= $activeTab === 'slider' ? 'active' : '' ?>" role="tab"
       aria-selected="<?= $activeTab === 'slider' ? 'true' : 'false' ?>" aria-controls="tabSlider" data-bs-toggle="tab"
@@ -248,7 +199,6 @@ $footer = $sections['footer'] ?? [];
 </ul>
 
 <form method="post" enctype="multipart/form-data">
-  <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>">
   <!-- keep track of current tab -->
   <input type="hidden" name="active_tab" id="activeTabInput" value="<?= htmlspecialchars($activeTab) ?>">
 
@@ -614,107 +564,7 @@ $footer = $sections['footer'] ?? [];
       </div>
     </div>
 
-    
-    <!-- ===== HERO ===== -->
-    <div class="tab-pane fade <?= $activeTab === 'hero' ? 'show active' : '' ?>" id="tabHero" role="tabpanel"
-      aria-labelledby="btn-tabHero">
-      <div class="d-flex align-items-center justify-content-between mb-2">
-        <h5 class="mb-0">Hero</h5>
-        <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" id="hero_enabled" name="hero[enabled]" value="1"
-            <?= !empty($hero['enabled']) ? 'checked' : ''; ?>>
-          <label class="form-check-label small" for="hero_enabled">Enable section</label>
-        </div>
-      </div>
-
-      <?php
-      $hr_title_en = !empty($hero['title_enabled']);
-      $hr_sub_en   = !empty($hero['subtitle_enabled']);
-      $hr_img_en   = !empty($hero['image_enabled']);
-      $hr_btn_en   = !empty($hero['button_enabled']);
-      ?>
-
-      <div class="row g-3">
-        <div class="col-md-6">
-          <label class="form-label d-flex align-items-center justify-content-between">
-            <span>Title</span>
-            <span class="form-check form-switch mb-0">
-              <input class="form-check-input" type="checkbox" name="hero[title_enabled]" value="1" <?= $hr_title_en ? 'checked' : '';?>>
-            </span>
-          </label>
-          <input type="text" class="form-control" name="hero[title]" value="<?= htmlspecialchars($hero['title'] ?? '') ?>"
-            placeholder="E.g., Welcome to Our Store">
-          <small class="text-muted">Main headline text.</small>
-        </div>
-
-        <div class="col-md-6">
-          <label class="form-label d-flex align-items-center justify-content-between">
-            <span>Subtitle</span>
-            <span class="form-check form-switch mb-0">
-              <input class="form-check-input" type="checkbox" name="hero[subtitle_enabled]" value="1" <?= $hr_sub_en ? 'checked' : '';?>>
-            </span>
-          </label>
-          <input type="text" class="form-control" name="hero[subtitle]" value="<?= htmlspecialchars($hero['subtitle'] ?? '') ?>"
-            placeholder="E.g., Fresh deals every day">
-          <small class="text-muted">Short supporting text under the title.</small>
-        </div>
-
-        <div class="col-md-8">
-          <label class="form-label d-flex align-items-center justify-content-between">
-            <span>Background Image</span>
-            <span class="form-check form-switch mb-0">
-              <input class="form-check-input" type="checkbox" name="hero[image_enabled]" value="1" <?= $hr_img_en ? 'checked' : '';?>>
-            </span>
-          </label>
-          <div class="input-group">
-            <input type="text" class="form-control" name="hero[image]" value="<?= htmlspecialchars($hero['image'] ?? '') ?>" placeholder="uploads/hero_xxx.jpg" readonly>
-            <input type="file" class="form-control" name="hero_image" accept="image/*">
-          </div>
-          <div class="mt-2">
-            <img id="heroPreviewImg" src="<?= !empty($hero['image']) ? htmlspecialchars($hero['image']) : '' ?>" alt="" class="img-fluid rounded border" style="max-height:180px;<?= empty($hero['image']) ? 'display:none' : '' ?>">
-            <div class="form-text">Max upload size: 6 MB (Recommended ≤ 5 MB). Supported: JPG, PNG, WEBP, GIF, SVG.</div>
-          </div>
-        </div>
-
-        <div class="col-md-4">
-          <label class="form-label">Content Alignment</label>
-          <select class="form-select" name="hero[align]">
-            <?php $align = $hero['align'] ?? 'center'; ?>
-            <option value="left"   <?= $align==='left'?'selected':''; ?>>Left</option>
-            <option value="center" <?= $align==='center'?'selected':''; ?>>Center</option>
-            <option value="right"  <?= $align==='right'?'selected':''; ?>>Right</option>
-          </select>
-          <div class="form-check mt-3">
-            <input class="form-check-input" type="checkbox" id="hero_overlay" name="hero[overlay]" value="1" <?= !empty($hero['overlay']) ? 'checked' : ''; ?>>
-            <label class="form-check-label" for="hero_overlay">Dark overlay on image</label>
-          </div>
-        </div>
-
-        <div class="col-md-6">
-          <label class="form-label d-flex align-items-center justify-content-between">
-            <span>Button Text &amp; URL</span>
-            <span class="form-check form-switch mb-0">
-              <input class="form-check-input" type="checkbox" name="hero[button_enabled]" value="1" <?= $hr_btn_en ? 'checked' : '';?>>
-            </span>
-          </label>
-          <div class="input-group">
-            <input type="text" class="form-control" name="hero[button_text]" value="<?= htmlspecialchars($hero['button_text'] ?? '') ?>" placeholder="Shop Now">
-            <input type="text" class="form-control" name="hero[button_url]" value="<?= htmlspecialchars($hero['button_url'] ?? '') ?>" placeholder="/shop">
-          </div>
-          <small class="text-muted">Leave blank to hide the button.</small>
-        </div>
-      </div>
-
-      <div class="d-flex justify-content-between mt-4">
-        <button type="submit" name="save_section" value="hero" class="btn btn-secondary px-4">
-          <i class="bi bi-save me-1"></i> Save
-        </button>
-        <button type="submit" name="save_all" class="btn btn-dark px-4">
-          <i class="bi bi-save2 me-1"></i> Save All Changes
-        </button>
-      </div>
-    </div>
-<!-- ===== SLIDER ===== -->
+    <!-- ===== SLIDER ===== -->
     <div class="tab-pane fade <?= $activeTab === 'slider' ? 'show active' : '' ?>" id="tabSlider" role="tabpanel"
       aria-labelledby="btn-tabSlider">
       <div class="d-flex align-items-center justify-content-between mb-2">
@@ -1112,129 +962,263 @@ $footer = $sections['footer'] ?? [];
 
 
 
+<?php include 'includes/footer.php'; ?>
 
-<!-- Unified scripts: active tab + header logo preview + multi-uploader (header/slider/hero/banner) -->
-<script>
-document.addEventListener('DOMContentLoaded', function(){
 
-  /* 1) Keep active tab in URL + hidden input */
-  document.querySelectorAll('button[data-bs-toggle="tab"]').forEach(function (btn) {
-    btn.addEventListener('shown.bs.tab', function (e) {
-      var target = e.target.getAttribute('data-bs-target');
-      var key = (target || '').replace('#tab', '').toLowerCase();
-      var input = document.getElementById('activeTabInput');
-      if (input && key) input.value = key;
-      if (key) {
-        var url = new URL(window.location);
-        url.searchParams.set('tab', key);
-        window.history.replaceState({}, '', url);
+
+
+
+
+
+image upload system sob tab a implement korar jonno=>
+
+ok akhon ai file upload system tw just headerbar a korlam ami amar // admin/settings_basic.php file ta zip kore dile amar sob tab a mani jeigula image upload lagbe sekhane same upload system kore dite parba?
+
+1) PHP: Helpers + Generic Upload Handler
+ফাইলের শুরুতে (DB/sections লোডের পর, if ($_SERVER['REQUEST_METHOD'] === 'POST')–এ ঢোকার আগে) এই helper গুলো দাও:
+<?php
+// --- Public URL resolve for admin preview (keeps /uploads/... working from /admin/) ---
+if (!function_exists('admin_asset_url')) {
+  function admin_asset_url(string $path): string {
+    $p = trim($path);
+    if ($p === '') return '';
+    if (preg_match('~^(https?:)?//~i', $p)) return $p;          // absolute
+    if ($p[0] === '/') return $p;                               // root-relative
+    // We store uploads as "uploads/<file>"; this works from admin as "uploads/<file>"
+    return $p;
+  }
+}
+
+// --- Move an uploaded file to admin/uploads & return public URL like "uploads/<name>" ---
+if (!function_exists('handle_upload')) {
+  function handle_upload(array $file): ?string {
+    if (empty($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) return null;
+    $tmp  = $file['tmp_name'];
+    $orig = $file['name'] ?? 'file.bin';
+    if (!is_uploaded_file($tmp)) return null;
+
+    $uploadDir = __DIR__ . '/uploads'; // physical: admin/uploads
+    if (!is_dir($uploadDir)) @mkdir($uploadDir, 0775, true);
+
+    $ext   = strtolower(pathinfo($orig, PATHINFO_EXTENSION));
+    $allow = ['png','jpg','jpeg','webp','gif','svg'];
+    if (!in_array($ext, $allow, true)) $ext = 'png';
+
+    $fname  = 'u_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+    $destFs = $uploadDir . DIRECTORY_SEPARATOR . $fname;
+    if (!move_uploaded_file($tmp, $destFs)) return null;
+
+    // Public path (served from site root): "uploads/<file>"
+    return 'uploads/' . $fname;
+  }
+}
+?>
+
+এবার POST হ্যান্ডলার–এর ভিতরে (তোমার save logic শুরুর আগেই) এই জেনেরিক অংশটা বসাও—এটা অটোমেটিক সব আপলোড নেবে:
+<?php
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+
+  // ✅ Generic handler for ANY file input named as: upload[SECTION][FIELD]
+  if (!empty($_FILES['upload']) && is_array($_FILES['upload'])) {
+    // $_FILES['upload'] is nested: name[section][field], tmp_name[section][field], ...
+    foreach (($_FILES['upload']['name'] ?? []) as $section => $fields) {
+      if (!is_array($fields)) continue;
+      foreach ($fields as $field => $nameVal) {
+        // Build a single-file array for this field
+        $file = [
+          'name'     => $_FILES['upload']['name'][$section][$field]     ?? null,
+          'type'     => $_FILES['upload']['type'][$section][$field]     ?? null,
+          'tmp_name' => $_FILES['upload']['tmp_name'][$section][$field] ?? null,
+          'error'    => $_FILES['upload']['error'][$section][$field]    ?? UPLOAD_ERR_NO_FILE,
+          'size'     => $_FILES['upload']['size'][$section][$field]     ?? 0,
+        ];
+        $url = handle_upload($file); // returns "uploads/xxx.ext" or null
+        if ($url) {
+          if (!isset($_POST[$section])) $_POST[$section] = [];
+          // set the URL into target field so DB will store it
+          $_POST[$section][$field] = $url;
+          // optional: auto-enable toggle if exists
+          $_POST[$section][$field . '_enabled'] = $_POST[$section][$field . '_enabled'] ?? 1;
+        }
       }
-    });
-  });
+    }
+  }
 
-  /* 2) Header logo dedicated preview logic */
-  (function () {
-    const fileInput   = document.getElementById('header_logo');
-    if (!fileInput) return;
+  // ... এরপর তোমার আগের saveAll/partial save logic একই থাকবে ...
+}
+?>
+অর্থাৎ যেকোনো ট্যাবে তুমি যদি name="upload[header][logo]" দাও, তাহলে POST-এ আপলোড ফাইল অটো move হবে admin/uploads/–এ, আর $_POST['header']['logo']–তে public URL (uploads/<file>) বসে যাবে—তোমার বর্তমান DB সেভ লজিক তা স্টোর করে দেবে।
 
-    const placeholder = document.getElementById('logoPlaceholderWrap');
-    const previewWrap = document.getElementById('logoPreviewWrap');
-    const previewImg  = document.getElementById('logoPreviewImg');
-    const unsavedBadge= document.getElementById('logoUnsavedBadge');
-    const previewNote = document.getElementById('logoPreviewNote');
-    const resetBtn    = document.getElementById('logoResetBtn');
-    const viewBtn     = document.getElementById('logoViewBtn');
+2) HTML: Reusable Upload Widget (যেকোনো ট্যাবে পেস্ট করো)
 
-    const initialSrc = previewImg ? previewImg.getAttribute('src') : '';
+নিচের একটা কম্প্যাক্ট উইজেট তুমি যেকোনো সেকশনে ব্যবহার করতে পারো।
+শুধু ৩টা জিনিস পরিবর্তন করবে:
+
+* data-section="header" → সেকশনের নাম বসাও (যেমন banner, slider, ইত্যাদি)
+* data-field="logo" → ফিল্ডের নাম বসাও (যেমন left_img, hero, brand_icon, ইত্যাদি)
+* $current → ঐ ফিল্ডের বর্তমান URL
+
+<?php
+  // Example for header.logo
+  $current = trim((string)($header['logo'] ?? ''));             // current URL from DB
+  $currentSrc = admin_asset_url($current);                       // preview-safe
+  $hasImg = !empty($current);
+?>
+<div class="upload-widget border rounded p-3"
+     data-section="header"
+     data-field="logo">
+  <!-- Single hidden file input following the naming convention -->
+  <input type="file" class="upload-input d-none" name="upload[header][logo]" accept="image/*">
+
+  <!-- Preview or Placeholder -->
+  <div class="uw-preview <?= $hasImg ? '' : 'd-none' ?>">
+    <div class="d-flex align-items-center gap-3">
+      <img class="uw-img rounded" src="<?= htmlspecialchars($currentSrc) ?>" style="height:48px; width:auto;" alt="">
+      <div class="flex-grow-1">
+        <div class="small text-muted">
+          <span class="uw-note"><?= $hasImg ? 'Current image' : '' ?></span>
+          <span class="uw-badge badge bg-warning text-dark ms-2 d-none">Unsaved preview</span>
+        </div>
+        <div class="d-flex align-items-center gap-2 mt-1">
+          <button type="button" class="btn btn-sm btn-outline-secondary uw-change">Change</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary uw-reset d-none">Reset</button>
+          <a class="btn btn-sm btn-outline-dark uw-view <?= $hasImg ? '' : 'd-none' ?>" href="<?= htmlspecialchars($currentSrc) ?>" target="_blank" rel="noopener">View</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="uw-placeholder text-center p-3 bg-light rounded <?= $hasImg ? 'd-none' : '' ?>">
+    <div class="mb-2" style="width:64px;height:64px;border-radius:999px;background:#000;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;">img</div>
+    <div class="small text-muted mb-2">No image yet</div>
+    <button type="button" class="btn btn-sm btn-dark uw-upload">Upload</button>
+    <div class="form-text">Please upload image/picture</div>
+  </div>
+
+  <!-- Optional: inline error spot -->
+  <div class="uw-error text-danger small d-none mt-2"></div>
+</div>
+চাইলে একই সেকশনে একাধিক ফিল্ড (যেমন: upload[banner][left_img], upload[banner][right_img]) — কপি করে data-field আর name বদলে দাও।
+
+
+
+3) JS: একবারই যোগ করবে (পাতার নিচে)
+
+এই স্ক্রিপ্টটা একবার যোগ করলে সব upload-widget অটো কাজ করবে—instant preview + reset + view (preview):
+<script>
+(function(){
+  function qs(el, sel){ return el.querySelector(sel); }
+  function qsa(el, sel){ return Array.from(el.querySelectorAll(sel)); }
+
+  const widgets = document.querySelectorAll('.upload-widget');
+  if (!widgets.length) return;
+
+  widgets.forEach(w => {
+    const input   = qs(w, '.upload-input');
+    const preview = qs(w, '.uw-preview');
+    const ph      = qs(w, '.uw-placeholder');
+    const img     = qs(w, '.uw-img');
+    const note    = qs(w, '.uw-note');
+    const badge   = qs(w, '.uw-badge');
+    const view    = qs(w, '.uw-view');
+    const btnUpload = qs(w, '.uw-upload');
+    const btnChange = qs(w, '.uw-change');
+    const btnReset  = qs(w, '.uw-reset');
+
+    let initialSrc = img ? img.getAttribute('src') : '';
     let blobUrl = null;
 
-    function updateViewButton(src, isUnsaved) {
-      if (!viewBtn) return;
-      if (src) {
-        viewBtn.classList.remove('d-none');
-        viewBtn.setAttribute('href', src);
-        viewBtn.textContent = isUnsaved ? 'View (preview)' : 'View';
-      } else {
-        viewBtn.classList.add('d-none');
-        viewBtn.removeAttribute('href');
+    function showPreview(src, unsaved){
+      if (img) img.src = src || '';
+      if (preview) preview.classList.remove('d-none');
+      if (ph) ph.classList.add('d-none');
+
+      if (badge) badge.classList.toggle('d-none', !unsaved);
+      if (btnReset) btnReset.classList.toggle('d-none', !unsaved);
+      if (note) note.textContent = unsaved ? 'Selected (not saved yet)' : (initialSrc ? 'Current image' : '');
+
+      if (view){
+        if (src) {
+          view.classList.remove('d-none');
+          view.setAttribute('href', src);
+          view.textContent = unsaved ? 'View (preview)' : 'View';
+        } else {
+          view.classList.add('d-none');
+          view.removeAttribute('href');
+        }
       }
     }
 
-    function showPreview(src, isUnsaved) {
-      if (!previewImg) return;
-      previewImg.src = src || '';
-      if (previewWrap) previewWrap.classList.remove('d-none');
-      if (placeholder) placeholder.classList.add('d-none');
-      if (unsavedBadge) unsavedBadge.classList.toggle('d-none', !isUnsaved);
-      if (resetBtn) resetBtn.classList.toggle('d-none', !isUnsaved);
-      if (previewNote) previewNote.textContent = isUnsaved ? 'Selected (not saved yet)' : (initialSrc ? 'Current logo' : '');
-      updateViewButton(src, isUnsaved);
-    }
-
-    function resetPreview() {
-      if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
-      try { fileInput.value = ''; } catch (e) {}
-      if (initialSrc) {
+    function resetPreview(){
+      if (blobUrl){ URL.revokeObjectURL(blobUrl); blobUrl = null; }
+      if (input) { try { input.value = ''; } catch(e){} }
+      if (initialSrc){
         showPreview(initialSrc, false);
       } else {
-        if (previewWrap) previewWrap.classList.add('d-none');
-        if (placeholder) placeholder.classList.remove('d-none');
-        updateViewButton('', false);
+        if (preview) preview.classList.add('d-none');
+        if (ph) ph.classList.remove('d-none');
+        if (view){ view.classList.add('d-none'); view.removeAttribute('href'); }
       }
     }
 
-    fileInput.addEventListener('change', function (e) {
-      const f = e.target.files && e.target.files[0];
-      if (!f) return;
-      if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
-      blobUrl = URL.createObjectURL(f);
-      showPreview(blobUrl, true);
-    });
-
-    if (resetBtn) {
-      resetBtn.addEventListener('click', function () {
-        resetPreview();
-      });
-    }
-  })();
-
-  /* 3) Generic uploader + live preview for header/slider/hero/banner */
-  (function () {
-    function bindUploader(triggerAttr, fileInputId, previewImgId, urlInputSelector) {
-      var trigger   = document.querySelector('[data-upload-trigger="' + triggerAttr + '"]');
-      var fileInput = document.getElementById(fileInputId);
-      var preview   = document.getElementById(previewImgId);
-      var urlInput  = document.querySelector(urlInputSelector);
-      if (!trigger || !fileInput) return;
-
-      trigger.addEventListener('click', function () { fileInput.click(); });
-
-      fileInput.addEventListener('change', function () {
-        if (!fileInput.files || !fileInput.files[0]) return;
-        var reader = new FileReader();
-        reader.onload = function (e) {
-          if (!preview) {
-            preview = document.createElement('img');
-            preview.id = previewImgId;
-            preview.className = 'mt-2 rounded';
-            preview.style.height = '120px';
-            var parent = fileInput.parentElement || trigger.parentElement || document.body;
-            parent.appendChild(preview);
-          }
-          preview.src = e.target.result;
-          preview.style.display = 'block';
-        };
-        reader.readAsDataURL(fileInput.files[0]);
-        if (urlInput) urlInput.value = '';
-      });
+    function triggerInput(){
+      if (input) input.click();
     }
 
-    bindUploader('header', 'header_logo',    'logoPreviewImg',   'input[name="header[logo]"]');
-    bindUploader('slider', 'slider_image',   'sliderPreviewImg', 'input[name="slider[image]"]');
-    bindUploader('hero',   'hero_image',     'heroPreviewImg',   'input[name="hero[image]"]');
-    bindUploader('banner', 'banner_image',   'bannerPreviewImg', 'input[name="banner[image]"]');
-  })();
+    // Bind buttons
+    if (btnUpload) btnUpload.addEventListener('click', triggerInput);
+    if (btnChange) btnChange.addEventListener('click', triggerInput);
+    if (btnReset)  btnReset.addEventListener('click', resetPreview);
 
-});
+    // File change → preview
+    if (input){
+      input.addEventListener('change', (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (!f) return;
+        if (blobUrl){ URL.revokeObjectURL(blobUrl); blobUrl = null; }
+        blobUrl = URL.createObjectURL(f);
+        showPreview(blobUrl, true);
+      });
+    }
+  });
+})();
 </script>
-<?php include 'includes/footer.php'; ?>
+
+
+
+4) কীভাবে ট্যাবে ব্যবহার করবে? (দুইটা উদাহরণ)
+(A) Header → Logo
+
+তোমার header–এর যেখানে ছিল, আগের file input ব্লক বাদ দিয়ে উপরের upload-widget বসাও:
+
+<?php $current = trim((string)($header['logo'] ?? '')); $currentSrc = admin_asset_url($current); ?>
+<div class="upload-widget border rounded p-3" data-section="header" data-field="logo">
+  <input type="file" class="upload-input d-none" name="upload[header][logo]" accept="image/*">
+  <!-- বাকি widget টেমপ্লেট ঠিক আগের মতো (উপরের কোডেই আছে) -->
+  ...
+</div>
+
+সাথে পাশে থাকুক (টেক্সট ফিল্ড/টগল—যদি থাকে):
+<input type="text" name="header[title]" class="form-control" value="<?= htmlspecialchars($header['title'] ?? '') ?>">
+
+(B) Banner → Left Image
+<?php $current = trim((string)($banner['left_img'] ?? '')); $currentSrc = admin_asset_url($current); ?>
+<div class="upload-widget border rounded p-3" data-section="banner" data-field="left_img">
+  <input type="file" class="upload-input d-none" name="upload[banner][left_img]" accept="image/*">
+  <!-- টেমপ্লেট একই -->
+  ...
+</div>
+Save করলে হ্যান্ডলার অটো $_POST['banner']['left_img'] = 'uploads/xxx.ext' বসিয়ে দেবে—তোমার DB সেভ লজিক আগের মতোই সব সেকশন সেভ করবে।
+Save না করলে uploads–এ কিছু যাবে না; শুধু ব্রাউজারে preview থাকবে।
+
+
+
+5) দুইটা খুব গুরুত্বপূর্ণ চেক
+
+তোমার <form ...>–এ enctype="multipart/form-data" আছে—নিশ্চিত হও।
+
+admin/uploads/ ফোল্ডার writable (dev এ 775/777)।
+
+এতেই হয়ে গেল ✅
+এখন যেকোনো ট্যাবে (header/nav/slider/banner/product_card/footer...) যেখানে ইমেজ দরকার, এই widget + name="upload[SECTION][FIELD]" দিলেই অটো আপলোড, ইনস্ট্যান্ট প্রিভিউ, রিসেট, ভিউ—সব একসাথে কাজ করবে।
+চাও চাইলে আমি তোমার বর্তমান ট্যাবগুলোর জন্য ৩–৪টা রেডিমেড ব্লক লিখে দিতে পারি (যেমন slider hero, banner left/right, footer logo ইত্যাদি) — বলো কোন কোন ফিল্ড লাগবে 👇

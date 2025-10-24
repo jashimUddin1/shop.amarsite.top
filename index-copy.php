@@ -42,7 +42,6 @@ $sections = get_section_map($con);
 $topbar = $sections['topbar'] ?? [];
 $header = $sections['header'] ?? [];
 $nav = $sections['nav'] ?? [];
-$hero = $sections['hero'] ?? [];
 $slider = $sections['slider'] ?? [];
 $banner = $sections['banner'] ?? [];
 $productCard = $sections['product_card'] ?? [];
@@ -541,60 +540,7 @@ $inline = $styleCss[$style] ?? $styleCss['pill-gray'];
 
 
 
-  
-  <!-- ========== HERO (between Nav and Slider) ========== -->
-  <?php
-  $hero_on = !empty($hero['enabled']);
-  if ($hero_on):
-    $badge_on = !empty($hero['badge_enabled']);
-    $badge = trim((string)($hero['badge_text'] ?? ''));
-    $title = trim((string)($hero['title'] ?? ''));
-    $subtitle = trim((string)($hero['subtitle'] ?? ''));
-    $btn_on = !empty($hero['button_enabled']);
-    $btn_text = (string)($hero['button_text'] ?? 'Shop now');
-    $btn_url  = (string)($hero['button_url']  ?? '#');
-    $img_on = !empty($hero['image_enabled']) && !empty($hero['image']);
-    $img    = (string)($hero['image'] ?? '');
-  ?>
-  <section class="py-4 py-md-5" style="background:#f8fafc;">
-    <div class="container">
-      <div class="row align-items-center g-4 g-lg-5">
-        <div class="col-lg-7">
-          <?php if ($badge_on && $badge !== ''): ?>
-            <span class="d-inline-flex align-items-center gap-2 rounded-pill px-3 py-2 bg-white shadow-sm border">
-              <span class="d-inline-block rounded-circle" style="width:10px;height:10px;background:#16a34a;"></span>
-              <strong class="small m-0"><?= esc($badge) ?></strong>
-            </span>
-          <?php endif; ?>
-
-          <?php if ($title !== ''): ?>
-            <h1 class="display-4 fw-bold mt-3 mb-3" style="letter-spacing:-.02em;"><?= esc($title) ?></h1>
-          <?php endif; ?>
-
-          <?php if ($subtitle !== ''): ?>
-            <p class="fs-5 text-secondary mb-4" style="max-width:52ch;"><?= esc($subtitle) ?></p>
-          <?php endif; ?>
-
-          <?php if ($btn_on): ?>
-            <a href="<?= esc($btn_url) ?>" class="btn btn-dark btn-lg rounded-pill px-4">
-              <?= esc($btn_text) ?>
-            </a>
-          <?php endif; ?>
-        </div>
-        <div class="col-lg-5">
-          
-            <div class="ratio ratio-16x9 rounded-4 shadow-lg overflow-hidden bg-body">
-              <img src="admin/<?= esc($img) ?>" alt="Hero image" class="w-100 h-100" style="object-fit:cover;">
-            </div>
-
-        </div>
-      </div>
-    </div>
-  </section>
-  <?php endif; ?>
-
-
-<!-- ======== SLIDER ======== -->
+  <!-- ======== SLIDER ======== -->
   <?php
   $slider_on = !empty($slider['enabled']);
   $sl_title_on = !empty($slider['title_enabled']);
